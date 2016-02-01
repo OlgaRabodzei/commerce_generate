@@ -6,6 +6,7 @@
 
 namespace Drupal\commerce_generate\Plugin\DevelGenerate;
 
+use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Plugin\ContainerFactoryPluginInterface;
 use Drupal\devel_generate\DevelGenerateBase;
@@ -13,6 +14,7 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Language\LanguageInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
+use Drupal\Core\Field\FieldStorageDefinitionInterface;
 
 /**
  * Provides a CommerceDevelGenerate plugin.
@@ -115,15 +117,18 @@ class CommerceDevelGenerate extends DevelGenerateBase implements ContainerFactor
     $product_title = $this->getRandom()
       ->word(mt_rand(1, $results['title_length']));
 
+    //$variation = $this->generateProductVariation($results);
     $product = $this->productStorage->create(array(
       'product_id' => NULL,
       'type' => $product_type,
       'langcode' => $this->getLangcode($results),
       'title' => $product_title,
       'devel_generate' => TRUE,
+      //'variations' => array($variation),
     ));
 
-    $this->populateFields($product);
+    //$this->populateFields($product);
+    $this->populateF($results, $product);
 
     $product->save();
   }
@@ -131,7 +136,7 @@ class CommerceDevelGenerate extends DevelGenerateBase implements ContainerFactor
   /**
    * Create one product variation.
    */
-  protected function generateProductVariation(&$results, $product_id) {
+  protected function generateProductVariation(&$results) {
     $product_variation_type = 'default';
     // Need to be generated.
     $product_variation_title = $this->getRandom()
@@ -141,13 +146,13 @@ class CommerceDevelGenerate extends DevelGenerateBase implements ContainerFactor
       'variation_id' => NULL,
       'type' => $product_variation_type,
       'langcode' => $this->getLangcode($results),
-      'product_id' => $product_id,
       'sku' => $product_variation_title,
     ));
 
     $this->populateFields($product_variation);
 
     $product_variation->save();
+    return $product_variation;
   }
 
   /**
@@ -223,6 +228,36 @@ class CommerceDevelGenerate extends DevelGenerateBase implements ContainerFactor
    */
   protected function generateElements(array $values) {
     $this->generateProducts($values);
+  }
+
+  public function populateF(&$results, EntityInterface $entity) {
+    /** @var \Drupal\field\FieldConfigInterface[] $instances */
+    $instances = entity_load_multiple_by_properties('field_config', array(
+      'entity_type' => $entity->getEntityType()
+        ->id(),
+      'bundle' => $entity->bundle(),
+    ));
+
+    if ($skips = function_exists('drush_get_option') ? drush_get_option('skip-fields', '') : @$_REQUEST['skip-fields']) {
+      foreach (explode(',', $skips) as $skip) {
+        unset($instances[$skip]);
+      }
+    }
+
+    foreach ($instances as $instance) {
+      $field_storage = $instance->getFieldStorageDefinition();
+      $max = $cardinality = $field_storage->getCardinality();
+      $field_name = $field_storage->getName();
+      if ($field_name == 'variations') {
+        $entity->$field_name = $this->generateProductVariation($results);
+        continue;
+      }
+      if ($cardinality == FieldStorageDefinitionInterface::CARDINALITY_UNLIMITED) {
+        // Just an arbitrary number for 'unlimited'
+        $max = rand(1, 3);
+      }
+      $entity->$field_name->generateSampleItems($max);
+    }
   }
 
 }
