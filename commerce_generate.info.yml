@@ -1,0 +1,8 @@
+name: Commerce generate
+core: 8.x
+description: 'Generate products from commerce module'
+type: module
+package: Custom
+dependencies:
+  - commerce
+  - devel_generate
