@@ -6,6 +6,8 @@
 
 namespace Drupal\commerce_generate\Plugin\DevelGenerate;
 
+use Drupal\commerce_price\Plugin\Field\FieldType\Price;
+use Drupal\commerce_price\Plugin\Field\FieldWidget\PriceDefaultWidget;
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Plugin\ContainerFactoryPluginInterface;
@@ -15,6 +17,7 @@ use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Language\LanguageInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Field\FieldStorageDefinitionInterface;
+use CommerceGuys\Intl\Currency\CurrencyRepository;
 
 /**
  * Provides a CommerceDevelGenerate plugin.
@@ -28,8 +31,13 @@ use Drupal\Core\Field\FieldStorageDefinitionInterface;
  *   url = "products",
  *   permission = "administer devel_generate",
  *   settings = {
- *     "num" = 50,
- *     "kill" = FALSE
+ *     "num" = 5,
+ *     "kill" = FALSE,
+ *     "title_length" = 10,
+ *     "num_var" = 1,
+ *     "title_var_length" = 10,
+ *     "price_min" = 10,
+ *     "price_max" = 1000,
  *   }
  * )
  */
@@ -141,14 +149,17 @@ class CommerceDevelGenerate extends DevelGenerateBase implements ContainerFactor
     $product_variation_title = $this->getRandom()
       ->word(mt_rand(1, $max));
 
+    $min = isset($results['price_min']) ? $results['price_min'] : $this->getSetting('price_min');
+    $max = isset($results['price_max']) ? $results['price_max'] : $this->getSetting('price_max');
+    $cur = $results['currency'];
     $product_variation = $this->variationStorage->create(array(
       'variation_id' => NULL,
       'type' => $product_variation_type,
       'langcode' => $this->getLangcode($results),
       'sku' => $product_variation_title,
       'price' => array(
-        'amount' => mt_rand($results['price_min'], $results['price_max']),
-        'currency_code' => 'EUR',
+        'amount' => mt_rand($min, $max),
+        'currency_code' => $results['currency'],
       ),
       'devel_generate' => TRUE,
     ));
@@ -233,25 +244,37 @@ class CommerceDevelGenerate extends DevelGenerateBase implements ContainerFactor
       '#type' => 'number',
       '#title' => $this->t("Maximum number of characters in variation's titles"),
       '#default_value' => $this->getSetting('title_var_length'),
-      '#required' => TRUE,
+      '#required' => FALSE,
       '#min' => 1,
       '#max' => 255,
     );
 
-    $form['price_min'] = array(
+    $form['amount'] = array(
+      '#type' => 'fieldset',
+      '#title' => t('Amount'),
+    );
+
+    $form['amount']['price_min'] = array(
       '#type' => 'number',
       '#title' => $this->t('Minimum of variations price to generate?'),
       '#default_value' => $this->getSetting('price_min'),
-      '#required' => TRUE,
       '#min' => 0,
     );
 
-    $form['price_max'] = array(
+    $form['amount']['price_max'] = array(
       '#type' => 'number',
       '#title' => $this->t('Maximum of variations price to generate?'),
       '#default_value' => $this->getSetting('price_max'),
-      '#required' => TRUE,
       '#min' => 0,
+    );
+
+    $currency_repository = new CurrencyRepository();
+    $options = $currency_repository->getList();
+
+    $form['amount']['currency'] = array(
+      '#type' => 'select',
+      '#title' => $this->t('Set currency'),
+      '#options' => $options,
     );
 
     // We always need a language.
@@ -262,7 +285,7 @@ class CommerceDevelGenerate extends DevelGenerateBase implements ContainerFactor
     }
     $form['add_language'] = array(
       '#type' => 'select',
-      '#title' => $this->t('Set language on nodes'),
+      '#title' => $this->t('Set language on products'),
       '#multiple' => TRUE,
       '#description' => $this->t('Requires locale.module'),
       '#options' => $options,
@@ -271,7 +294,7 @@ class CommerceDevelGenerate extends DevelGenerateBase implements ContainerFactor
       ),
     );
 
-//    $form['#redirect'] = FALSE;
+    $form['#redirect'] = FALSE;
     return $form;
   }
 
