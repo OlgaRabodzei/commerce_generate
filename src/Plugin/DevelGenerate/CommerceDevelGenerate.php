@@ -6,8 +6,6 @@
 
 namespace Drupal\commerce_generate\Plugin\DevelGenerate;
 
-use Drupal\commerce_price\Plugin\Field\FieldType\Price;
-use Drupal\commerce_price\Plugin\Field\FieldWidget\PriceDefaultWidget;
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Plugin\ContainerFactoryPluginInterface;
@@ -112,8 +110,28 @@ class CommerceDevelGenerate extends DevelGenerateBase implements ContainerFactor
   /**
    * {@inheritdoc}
    */
-  function validateDrushParams($args) {
+  public function validateDrushParams($args) {
     // TODO: Implement validateDrushParams() method.
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  protected function generateElements(array $values) {
+    if (!empty($values['kill'])) {
+      $this->contentKill();
+    }
+    $this->generateProducts($values);
+  }
+
+  /**
+   * Generates a specified number of products.
+   */
+  private function generateProducts($values) {
+    for ($i = 1; $i <= $values['num']; $i++) {
+      $this->generateProduct($values);
+    }
+    $this->setMessage($this->formatPlural($values['num'], '1 product created.', 'Finished creating @count products'));
   }
 
   /**
@@ -140,6 +158,17 @@ class CommerceDevelGenerate extends DevelGenerateBase implements ContainerFactor
   }
 
   /**
+   * Create product variations.
+   */
+  protected function generateProductVariations(&$results) {
+    $values = array();
+    for ($delta = 0; $delta < $results['num_var']; $delta++) {
+      $values[$delta] = $this->generateProductVariation($results);
+    }
+    return $values;
+  }
+
+  /**
    * Create one product variation.
    */
   protected function generateProductVariation(&$results) {
@@ -151,7 +180,6 @@ class CommerceDevelGenerate extends DevelGenerateBase implements ContainerFactor
 
     $min = isset($results['price_min']) ? $results['price_min'] : $this->getSetting('price_min');
     $max = isset($results['price_max']) ? $results['price_max'] : $this->getSetting('price_max');
-    $cur = $results['currency'];
     $product_variation = $this->variationStorage->create(array(
       'variation_id' => NULL,
       'type' => $product_variation_type,
@@ -171,17 +199,6 @@ class CommerceDevelGenerate extends DevelGenerateBase implements ContainerFactor
   }
 
   /**
-   * Create product variations.
-   */
-  protected function generateProductVariations(&$results) {
-    $values = array();
-    for ($delta = 0; $delta < $results['num_var']; $delta++) {
-      $values[$delta] = $this->generateProductVariation($results);
-    }
-    return $values;
-  }
-
-  /**
    * Determine language based on $results.
    */
   protected function getLangcode($results) {
@@ -193,16 +210,6 @@ class CommerceDevelGenerate extends DevelGenerateBase implements ContainerFactor
       $langcode = $this->languageManager->getDefaultLanguage()->getId();
     }
     return $langcode;
-  }
-
-  /**
-   * Generates a specified number of products.
-   */
-  private function generateProducts($values) {
-    for ($i = 1; $i <= $values['num']; $i++) {
-      $this->generateProduct($values);
-    }
-    $this->setMessage($this->formatPlural($values['num'], '1 product created.', 'Finished creating @count products'));
   }
 
   /**
@@ -299,15 +306,15 @@ class CommerceDevelGenerate extends DevelGenerateBase implements ContainerFactor
   }
 
   /**
-   * {@inheritdoc}
+   * As populateFields().
+   *
+   * Populate the fields on a given entity with sample values.
+   *
+   * @param \Drupal\Core\Entity\EntityInterface $entity
+   *   The entity to be enriched with sample field values.
+   *
+   * @see populateFields()
    */
-  protected function generateElements(array $values) {
-    if (!empty($values['kill'])) {
-      $this->contentKill();
-    }
-    $this->generateProducts($values);
-  }
-
   public function populateF(&$results, EntityInterface $entity) {
     /** @var \Drupal\field\FieldConfigInterface[] $instances */
     $instances = entity_load_multiple_by_properties('field_config', array(
