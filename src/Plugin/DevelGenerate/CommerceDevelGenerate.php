@@ -117,14 +117,12 @@ class CommerceDevelGenerate extends DevelGenerateBase implements ContainerFactor
     $product_title = $this->getRandom()
       ->word(mt_rand(1, $results['title_length']));
 
-    //$variation = $this->generateProductVariation($results);
     $product = $this->productStorage->create(array(
       'product_id' => NULL,
       'type' => $product_type,
       'langcode' => $this->getLangcode($results),
       'title' => $product_title,
       'devel_generate' => TRUE,
-      //'variations' => array($variation),
     ));
 
     //$this->populateFields($product);
@@ -139,20 +137,37 @@ class CommerceDevelGenerate extends DevelGenerateBase implements ContainerFactor
   protected function generateProductVariation(&$results) {
     $product_variation_type = 'default';
     // Need to be generated.
+    $max = isset($results['title_var_length']) ? $results['title_var_length'] : $results['title_length'];
     $product_variation_title = $this->getRandom()
-      ->word(mt_rand(1, $results['title_length']));
+      ->word(mt_rand(1, $max));
 
     $product_variation = $this->variationStorage->create(array(
       'variation_id' => NULL,
       'type' => $product_variation_type,
       'langcode' => $this->getLangcode($results),
       'sku' => $product_variation_title,
+      'price' => array(
+        'amount' => mt_rand($results['price_min'], $results['price_max']),
+        'currency_code' => 'EUR',
+      ),
+      'devel_generate' => TRUE,
     ));
 
     $this->populateFields($product_variation);
 
     $product_variation->save();
     return $product_variation;
+  }
+
+  /**
+   * Create product variations.
+   */
+  protected function generateProductVariations(&$results) {
+    $values = array();
+    for ($delta = 0; $delta < $results['num_var']; $delta++) {
+      $values[$delta] = $this->generateProductVariation($results);
+    }
+    return $values;
   }
 
   /**
@@ -183,9 +198,15 @@ class CommerceDevelGenerate extends DevelGenerateBase implements ContainerFactor
    * {@inheritdoc}
    */
   public function settingsForm(array $form, FormStateInterface $form_state) {
+    $form['kill'] = array(
+      '#type' => 'checkbox',
+      '#title' => $this->t('<strong>Delete all products</strong> before generating new.'),
+      '#default_value' => $this->getSetting('kill'),
+    );
+
     $form['num'] = array(
       '#type' => 'number',
-      '#title' => $this->t('How many nodes would you like to generate?'),
+      '#title' => $this->t('How many products would you like to generate?'),
       '#default_value' => $this->getSetting('num'),
       '#required' => TRUE,
       '#min' => 0,
@@ -193,20 +214,52 @@ class CommerceDevelGenerate extends DevelGenerateBase implements ContainerFactor
 
     $form['title_length'] = array(
       '#type' => 'number',
-      '#title' => $this->t('Maximum number of words in titles'),
+      '#title' => $this->t('Maximum number of characters in titles'),
       '#default_value' => $this->getSetting('title_length'),
       '#required' => TRUE,
       '#min' => 1,
       '#max' => 255,
     );
 
-    $options = array();
+    $form['num_var'] = array(
+      '#type' => 'number',
+      '#title' => $this->t('How many variations of products would you like to generate?'),
+      '#default_value' => $this->getSetting('num_var'),
+      '#required' => TRUE,
+      '#min' => 0,
+    );
+
+    $form['title_var_length'] = array(
+      '#type' => 'number',
+      '#title' => $this->t("Maximum number of characters in variation's titles"),
+      '#default_value' => $this->getSetting('title_var_length'),
+      '#required' => TRUE,
+      '#min' => 1,
+      '#max' => 255,
+    );
+
+    $form['price_min'] = array(
+      '#type' => 'number',
+      '#title' => $this->t('Minimum of variations price to generate?'),
+      '#default_value' => $this->getSetting('price_min'),
+      '#required' => TRUE,
+      '#min' => 0,
+    );
+
+    $form['price_max'] = array(
+      '#type' => 'number',
+      '#title' => $this->t('Maximum of variations price to generate?'),
+      '#default_value' => $this->getSetting('price_max'),
+      '#required' => TRUE,
+      '#min' => 0,
+    );
+
     // We always need a language.
+    $options = array();
     $languages = $this->languageManager->getLanguages(LanguageInterface::STATE_ALL);
     foreach ($languages as $langcode => $language) {
       $options[$langcode] = $language->getName();
     }
-
     $form['add_language'] = array(
       '#type' => 'select',
       '#title' => $this->t('Set language on nodes'),
@@ -218,8 +271,7 @@ class CommerceDevelGenerate extends DevelGenerateBase implements ContainerFactor
       ),
     );
 
-    $form['#redirect'] = FALSE;
-
+//    $form['#redirect'] = FALSE;
     return $form;
   }
 
@@ -227,6 +279,9 @@ class CommerceDevelGenerate extends DevelGenerateBase implements ContainerFactor
    * {@inheritdoc}
    */
   protected function generateElements(array $values) {
+    if (!empty($values['kill'])) {
+      $this->contentKill();
+    }
     $this->generateProducts($values);
   }
 
@@ -249,14 +304,28 @@ class CommerceDevelGenerate extends DevelGenerateBase implements ContainerFactor
       $max = $cardinality = $field_storage->getCardinality();
       $field_name = $field_storage->getName();
       if ($field_name == 'variations') {
-        $entity->$field_name = $this->generateProductVariation($results);
+        $entity->$field_name = $this->generateProductVariations($results);
         continue;
       }
       if ($cardinality == FieldStorageDefinitionInterface::CARDINALITY_UNLIMITED) {
-        // Just an arbitrary number for 'unlimited'
+        // Just an arbitrary number for 'unlimited'.
         $max = rand(1, 3);
       }
       $entity->$field_name->generateSampleItems($max);
+    }
+  }
+
+  /**
+   * Deletes all products.
+   */
+  protected function contentKill() {
+    $pids = $this->productStorage->getQuery()
+      ->execute();
+
+    if (!empty($pids)) {
+      $products = $this->productStorage->loadMultiple($pids);
+      $this->productStorage->delete($products);
+      $this->setMessage($this->t('Deleted %count products.', array('%count' => count($pids))));
     }
   }
 
